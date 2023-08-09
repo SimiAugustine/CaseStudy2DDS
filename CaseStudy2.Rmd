@@ -2,6 +2,8 @@
 title: "Unit 14 & Unit 15"
 author: "Simi"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
 ---
@@ -12,14 +14,15 @@ output: html_document
 
 # Loading Data From S3 Objects Using the aws.s3 package
 ```{r}
-install.packages("ggplot2")
-install.packages("aws.s3")
 
 library(tidyverse)
 library(dplyr)
 library(ggplot2)
-library("GGally")
+library(GGally)
 library(aws.s3)
+library(caret)
+library(class)
+library(pROC)
 
 Sys.setenv("AWS_ACCESS_KEY_ID" = "AKIAYDHJABOVWCTRSW5V",
            "AWS_SECRET_ACCESS_KEY" = "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",
@@ -27,133 +30,197 @@ Sys.setenv("AWS_ACCESS_KEY_ID" = "AKIAYDHJABOVWCTRSW5V",
 
 
 # Using aws.s3
-aws.s3::bucketlist()
+#aws.s3::bucketlist()
 aws.s3::get_bucket("ddsproject1")
 
 
 # read and write from ojbect
-
 #Read in CaseStudy2-Data.csv
 CaseStudy2 = s3read_using(FUN = read.csv,
                     bucket = "ddsproject1",
                     object = "CaseStudy2-data.csv")
 
+head(CaseStudy2)
+
+#check for missing data
+colSums(is.na(CaseStudy2))
+
+#create attrition count column
+CaseStudy2$Attrition_Count <- as.integer(ifelse(CaseStudy2$Attrition == "Yes", 1, 0))
+#Create a new column 'Age_Band'
+CaseStudy2$Age_Band <- ifelse(CaseStudy2$Age >= 55, 'Over 55',
+                                  ifelse(CaseStudy2$Age >= 45, '45-54',
+                                         ifelse(CaseStudy2$Age >= 35, '35-44',
+                                                ifelse(CaseStudy2$Age >= 25, '25-34',
+                                                       'Under 25'))))
+
+#get correlation of specific columns I'm interested
+cor(CaseStudy2[, c("Attrition_Count","Age","DailyRate","DistanceFromHome","Education","HourlyRate","JobSatisfaction",
+          "MonthlyIncome","MonthlyRate","NumCompaniesWorked","PercentSalaryHike","TotalWorkingYears",
+          "WorkLifeBalance","YearsAtCompany","YearsWithCurrManager","PercentSalaryHike")])
+
+# Generate the scatterplot matrix
+# Create a scatterplot matrix using the specified variables
+ggpairs(CaseStudy2[, c("Attrition_Count","MonthlyIncome", "Age","TotalWorkingYears","YearsWithCurrManager")], main = "Scatterplot Matrix")
+
+#Age, TotalWorkingYears and MonthlyIncome as the top 3 factors that affect attrition
+#age range summary
+agerange_counts <- CaseStudy2 %>%
+  group_by(Age_Band) %>%
+  summarise(Attrition = sum(Attrition_Count), Count = n(), Percent = sum(Attrition_Count)*100/n())
+
+#Plot attrition by age group
+ggplot(agerange_counts, aes(x = "", y = Percent, fill = Age_Band)) +
+  geom_bar(width = 1, stat = "identity") +
+  coord_polar(theta = "y") +
+  geom_text(aes(label = paste0(round(Percent, 2),"%\n",Attrition, paste0(" (", Count, ")"))),
+            position = position_stack(vjust = 0.5)) +
+  labs(fill = "Age Group", title = "Attrition by Age group (Pie Chart)") +
+  theme_void() +
+  theme(legend.position = "right",
+        plot.title = element_text(hjust = 0.5, size = 18),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10))
+
+#Total Working years
+ggplot(data = CaseStudy2,aes(x=TotalWorkingYears, )) + geom_bar()
+ggplot(CaseStudy2, aes(y = TotalWorkingYears, x = Attrition_Count)) +
+  geom_point() +
+  labs(y = "Total Working Years", x = "Attrition", title = "Attrition vs Total Working Years") +
+  theme_minimal()
+
+#get subset of attrition
+AttritionData <- CaseStudy2 %>% filter(Attrition_Count==1) %>% pull(MonthlyIncome)
+NoAttritionData <- CaseStudy2 %>% filter(Attrition_Count==0)  %>% pull(MonthlyIncome)
+#compute t test for hypothesis testing
+t.test(AttritionData, NoAttritionData)
+#The p-value of the test is 5.05e-05, which is less than the significance level alpha = 0.05. We can conclude that age of attrition is significantly different from age of no attrition with a p-value = 5.05e-05
+
+```
+
+```{r}
+
+# Loop for many k and the average of many training / test partition
+
+set.seed(6)
+CaseStudy2Data = CaseStudy2[,c("Age","TotalWorkingYears","MonthlyIncome","YearsWithCurrManager","Attrition")]
+
+set.seed(1)
+iterations = 100
+numks = 60
+splitPerc = .8
+
+masterAcc = matrix(nrow = iterations, ncol = numks)
+
+for(j in 1:iterations)
+{
+  trainIndices = sample(1:dim(CaseStudy2Data)[1],round(splitPerc * dim(CaseStudy2Data)[1]))
+  train = CaseStudy2Data[trainIndices,]
+  test = CaseStudy2Data[-trainIndices,]
+  for(i in 1:numks)
+  {
+    classifications = knn(train[,c(1,3)],test[,c(1,3)],train$Attrition, prob = TRUE, k = i)
+    table(classifications,test$Attrition)
+    CM = confusionMatrix(table(classifications,test$Attrition))
+    masterAcc[j,i] = CM$overall[1]
+  }
+  
+}
+
+MeanAcc = colMeans(masterAcc)
+
+plot(seq(1,numks,1),MeanAcc, type = "l")
+
+
+which.max(MeanAcc)
+max(MeanAcc)
+
+```
+
+```{r}
+#trainIndices1 = sample(1:dim(CaseStudy2Data)[1],round(.8 * dim(CaseStudy2Data)[1]))
+#save the highest accuracy sample
+#write.csv(trainIndices,file="TrainIndices.csv")
+trainIndices=read.csv("TrainIndices.csv")
+#train data
+train = CaseStudy2Data[trainIndices$x,]
+#test data
+test = CaseStudy2Data[-trainIndices$x,]
+#knn classification
+classifications = knn(train[,c(1,2,3,4)],test[,c(1,2,3,4)],train$Attrition, prob = TRUE, k = 11)
+table(classifications,test$Attrition)
+#get the confusion matrix
+confusionMatrix(table(classifications,test$Attrition))
+#New Threshold to maximise sensitivity/specificity
+probs = ifelse(classifications == "Yes",attributes(classifications)$prob, 1- attributes(classifications)$prob)
+NewClass = ifelse(probs >= .2, "Yes", "No")
+print(NewClass)
+table(NewClass,test[,5])
+CM = confusionMatrix(table(NewClass,test[,5]), mode = "everything")
+CM
+# Access various metrics from the confusion matrix
+accuracy <- CM$overall["Accuracy"]
+specificity <- CM$byClass["Specificity"]
+sensitivity <- CM$byClass["Sensitivity"]
+
+# Print the metrics
+print(paste("Accuracy:", accuracy))
+print(paste("Specificity:", specificity))
+print(paste("Sensitivity:", sensitivity))
+```
+
+```{r}
+
 #Read in CaseStudy2CompSet No Attrition.csv
 CaseStudy2CompSetNoAttrition = s3read_using(FUN = read.csv,
                     bucket = "ddsproject1",
                     object = "CaseStudy2CompSet No Attrition.csv")
-
-#Read in Case2PredictionsClassifyEXAMPLE.csv
-Case2PredictionsClassifyEXAMPLE = s3read_using(FUN = read.csv,
-                    bucket = "ddsproject1",
-                    object = "Case2PredictionsClassifyEXAMPLE.csv")
-
-ggplot(CaseStudy2, aes(x=Attrition, y=Age)) + geom_point() +
-            labs(title = "Scatter Plot", x = "Attrition", y = "Age")
-
-
-
-t.test(Score~Treatment, data = creativity)
-
-
-#Write mtcars to S3
-s3write_using(mtcars,FUN = write.csv,
-                    bucket = "ds6306.unit13",
-                    object = "mtcars.csv")
-
-
-# Read in and change IRIS and then write back
-library(jsonlite)
-iris2 = s3read_using(FUN = fromJSON,
-                    bucket = "ds6306.unit13",
-                    object = "iris.json")
-
-iris2 = iris2 %>% mutate(diff_Sep_Pet_Length = Sepal.Length - Petal.Length, diff_Sep_Pet_Width = Sepal.Width - Petal.Width)
-
-iris2 %>% ggplot(aes(x = diff_Sep_Pet_Length, y = diff_Sep_Pet_Width, color = Species)) + geom_point() + geom_smooth(method = "lm")
-
-s3write_using(iris2,FUN = write_json,
-                    bucket = "ds6306.unit13",
-                    object = "iris2.txt")
-
-#Write a plot/chart to S3
-
-png("irisScatter.png")
-
-iris2 %>% ggplot(aes(x = diff_Sep_Pet_Length, y = diff_Sep_Pet_Width, color = Species)) + geom_point() + geom_smooth(method = "lm")
-
-dev.off()
-
-put_object("irisScatter.png", object = "irisScatter2.png", bucket = "ds6306.unit13")
+#using the train data, get the predictions with k=11
+trainIndices=read.csv("TrainIndices.csv")
+train = CaseStudy2Data[trainIndices$x,]
+classifications = knn(train[,c(1,2,3,4)],CaseStudy2CompSetNoAttrition[,c("Age","TotalWorkingYears","MonthlyIncome","YearsWithCurrManager")],train$Attrition, prob = TRUE, k = 11)
+#set the new threshold
+probs = ifelse(classifications == "Yes",attributes(classifications)$prob, 1- attributes(classifications)$prob)
+NewClass = ifelse(probs >= .2, "Yes", "No")
+CaseStudy2CompSetNoAttrition$Attrition = NewClass
+#write the predictions to the specific csv file
+write.csv(CaseStudy2CompSetNoAttrition[,c("ID","Attrition")],file="Case2PredictionsSimiAugustine Attrition.csv")
 
 ```
 
 
-
-#AcuSpike Heatmap Example!
 ```{r}
+#Read in CaseStudy2CompSet No Salary.csv
+CaseStudy2CompSetNoSalary = s3read_using(FUN = read.csv,
+                    bucket = "ddsproject1",
+                    object = "CaseStudy2CompSet No Salary.csv")
 
-library(tidyverse)
-library(readr)
-library(aws.s3)
+#Read in CaseStudy2CompSet No Salary.csv
+Case2PredictionsRegressEXAMPLE = s3read_using(FUN = read.csv,
+                    bucket = "ddsproject1",
+                    object = "Case2PredictionsRegressEXAMPLE.csv")
 
-Sys.setenv("AWS_ACCESS_KEY_ID" = "YOURKEY",
-           "AWS_SECRET_ACCESS_KEY" = "YOUR SECRET KEY",
-           "AWS_DEFAULT_REGION" = "us-east-2")
+#train_indices <- createDataPartition(CaseStudy2Data$MonthlyIncome, p = 0.8, list = FALSE)
+train_data <- CaseStudy2Data[trainIndices$x, ]
+valid_data <- CaseStudy2Data[-trainIndices$x, ]
 
-jpeg("ThePlot.jpeg")
-mtcars %>% ggplot(aes(x = mpg, y = cyl)) + geom_point()
-dev.off()
+# Train a linear regression model
+model <- lm(MonthlyIncome ~ TotalWorkingYears + Age, data = train_data)
 
-#save the jpeg
-put_object("ThePlot.jpeg", object = "ThePlot111.jpeg", bucket = "smuds6306")
+# Make predictions on the validation set
+predictions <- predict(model, newdata = valid_data)
 
+# Calculate RMSE
+rmse <- sqrt(mean((valid_data$MonthlyIncome - predictions)^2))
 
+# Print RMSE
+cat("RMSE:", rmse, "\n")
 
-# Data clean and heat map for Acuspikes 
-# Data has been read into a Dataframe called "Acu"
+# Make predictions on the validation set
+predictionsNoSalary <- predict(model, newdata = CaseStudy2CompSetNoSalary)
 
-library(ggplot2)
-library(maps)
-library(dplyr)
-library(mapproj)
-
-#Read in the Data from S3
-Acu = s3read_using(FUN = read.csv,
-                    bucket = "smuds6306",
-                    object = "Acuspike Customer Data.csv") # read in company data
-
-lookup = data.frame(abb = state.abb, State = state.name) #makes a data frame with State name and abbreviation. 
-colnames(Acu)[2] = "abb" # Change Column Name
-Acu2 = merge(Acu,lookup,"abb") # make one dataset with state names and abb
-AcuMapData = count(Acu2,State) #count up the occurance of each state. 
-#AcuMapData = AcuMapData[-c(5,9,43),] #Shows contrast between other states better
-colnames(AcuMapData)[2] = "AcuSpikes" #change "n" to "Acuspikes"
-AcuMapData$region <- tolower(AcuMapData$State)
-AcuMapData2 = AcuMapData[-1]
-states <- map_data("state")
-map.df <- merge(states,AcuMapData2, by="region", all.x=T)
-map.df <- map.df[order(map.df$order),]
-
-#Generate and save the heatmap on EC2
-png("AcuHeatmap.png")
-ggplot(map.df, aes(x=long,y=lat,group=group))+
-  geom_polygon(aes(fill=AcuSpikes))+
-  geom_path()+ 
-  scale_fill_gradientn(colours=rev(heat.colors(10)),na.value="grey90")+ggtitle("Acuspike Systems by State")+
-coord_map()
-dev.off()
-
-#Save the heatmap to S3
-put_object("AcuHeatmap.png", object = "AcuHeatmap.png", bucket = "smuds6306")
-
-#Save the new data set used to generate the heatmap to S3
-s3write_using(map.df,FUN = write.csv,
-                    bucket = "ds6306.unit13",
-                    object = "AcuMapData.csv")
+CaseStudy2CompSetNoSalary$MonthlyIncome = round(predictionsNoSalary)
+write.csv(CaseStudy2CompSetNoSalary[,c("ID","MonthlyIncome")],file="Case2PredictionsSimiAugustine Salary.csv")
 
 ```
-
-
-
 

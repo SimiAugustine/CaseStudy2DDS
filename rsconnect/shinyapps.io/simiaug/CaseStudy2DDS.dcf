@@ -1,0 +1,14 @@
+name: CaseStudy2DDS
+title: CaseStudy2DDS
+username:
+account: simiaug
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 9579552
+bundleId: 7548949
+url: https://simiaug.shinyapps.io/CaseStudy2DDS/
+when: 1691599999.73201
+lastSyncTime: 1691599999.73202
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: Case2PredictionsSimiAugustine Attrition.csv|Case2PredictionsSimiAugustine Salary.csv|CaseStudy2.Rmd|README.md|Threshold ROC AUC Oversamp Undersamp R CODE Ver 2.R|TrainIndices.csv
