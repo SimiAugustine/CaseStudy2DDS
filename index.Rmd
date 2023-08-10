@@ -1,29 +1,226 @@
 ---
-title: "index"
+title: "Unit 14 & Unit 15"
+author: "Simi"
 output: html_document
-date: "2023-08-09"
+editor_options: 
+  chunk_output_type: console
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+---
+title: "AWS S3 and R"
+author: "Simi Augustine"
+output: html_document
+---
+
+# Loading Data From S3 Objects Using the aws.s3 package
+```{r}
+
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(GGally)
+library(aws.s3)
+library(caret)
+library(class)
+library(pROC)
+
+Sys.setenv("AWS_ACCESS_KEY_ID" = "AKIAYDHJABOVWCTRSW5V",
+           "AWS_SECRET_ACCESS_KEY" = "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",
+           "AWS_DEFAULT_REGION" = "us-east-2")
+
+
+# Using aws.s3
+#aws.s3::bucketlist()
+aws.s3::get_bucket("ddsproject1")
+
+
+# read and write from ojbect
+#Read in CaseStudy2-Data.csv
+CaseStudy2 = s3read_using(FUN = read.csv,
+                    bucket = "ddsproject1",
+                    object = "CaseStudy2-data.csv")
+
+head(CaseStudy2)
+
+#check for missing data
+colSums(is.na(CaseStudy2))
+
+#create attrition count column
+CaseStudy2$Attrition_Count <- as.integer(ifelse(CaseStudy2$Attrition == "Yes", 1, 0))
+#Create a new column 'Age_Band'
+CaseStudy2$Age_Band <- ifelse(CaseStudy2$Age >= 55, 'Over 55',
+                                  ifelse(CaseStudy2$Age >= 45, '45-54',
+                                         ifelse(CaseStudy2$Age >= 35, '35-44',
+                                                ifelse(CaseStudy2$Age >= 25, '25-34',
+                                                       'Under 25'))))
+
+#get correlation of specific columns I'm interested
+cor(CaseStudy2[, c("Attrition_Count","Age","DailyRate","DistanceFromHome","Education","HourlyRate","JobSatisfaction",
+          "MonthlyIncome","MonthlyRate","NumCompaniesWorked","PercentSalaryHike","TotalWorkingYears",
+          "WorkLifeBalance","YearsAtCompany","YearsWithCurrManager","PercentSalaryHike")])
+
+# Generate the scatterplot matrix
+# Create a scatterplot matrix using the specified variables
+ggpairs(CaseStudy2[, c("Attrition_Count","MonthlyIncome", "Age","TotalWorkingYears","YearsWithCurrManager")], main = "Scatterplot Matrix")
+
+#Age, TotalWorkingYears and MonthlyIncome as the top 3 factors that affect attrition
+#age range summary
+agerange_counts <- CaseStudy2 %>%
+  group_by(Age_Band) %>%
+  summarise(Attrition = sum(Attrition_Count), Count = n(), Percent = sum(Attrition_Count)*100/n())
+
+#Plot attrition by age group
+ggplot(agerange_counts, aes(x = "", y = Percent, fill = Age_Band)) +
+  geom_bar(width = 1, stat = "identity") +
+  coord_polar(theta = "y") +
+  geom_text(aes(label = paste0(round(Percent, 2),"%\n",Attrition, paste0(" (", Count, ")"))),
+            position = position_stack(vjust = 0.5)) +
+  labs(fill = "Age Group", title = "Attrition by Age group (Pie Chart)") +
+  theme_void() +
+  theme(legend.position = "right",
+        plot.title = element_text(hjust = 0.5, size = 18),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10))
+
+#Total Working years
+ggplot(data = CaseStudy2,aes(x=TotalWorkingYears, )) + geom_bar()
+ggplot(CaseStudy2, aes(y = TotalWorkingYears, x = Attrition_Count)) +
+  geom_point() +
+  labs(y = "Total Working Years", x = "Attrition", title = "Attrition vs Total Working Years") +
+  theme_minimal()
+
+#get subset of attrition
+AttritionData <- CaseStudy2 %>% filter(Attrition_Count==1) %>% pull(MonthlyIncome)
+NoAttritionData <- CaseStudy2 %>% filter(Attrition_Count==0)  %>% pull(MonthlyIncome)
+#compute t test for hypothesis testing
+t.test(AttritionData, NoAttritionData)
+#The p-value of the test is 5.05e-05, which is less than the significance level alpha = 0.05. We can conclude that age of attrition is significantly different from age of no attrition with a p-value = 5.05e-05
+
 ```
 
-## R Markdown test
+```{r}
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+# Loop for many k and the average of many training / test partition
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+set.seed(6)
+CaseStudy2Data = CaseStudy2[,c("Age","TotalWorkingYears","MonthlyIncome","YearsWithCurrManager","Attrition")]
 
-```{r cars}
-summary(cars)
+set.seed(1)
+iterations = 100
+numks = 60
+splitPerc = .8
+
+masterAcc = matrix(nrow = iterations, ncol = numks)
+
+for(j in 1:iterations)
+{
+  trainIndices = sample(1:dim(CaseStudy2Data)[1],round(splitPerc * dim(CaseStudy2Data)[1]))
+  train = CaseStudy2Data[trainIndices,]
+  test = CaseStudy2Data[-trainIndices,]
+  for(i in 1:numks)
+  {
+    classifications = knn(train[,c(1,3)],test[,c(1,3)],train$Attrition, prob = TRUE, k = i)
+    table(classifications,test$Attrition)
+    CM = confusionMatrix(table(classifications,test$Attrition))
+    masterAcc[j,i] = CM$overall[1]
+  }
+  
+}
+
+MeanAcc = colMeans(masterAcc)
+
+plot(seq(1,numks,1),MeanAcc, type = "l")
+
+
+which.max(MeanAcc)
+max(MeanAcc)
+
 ```
 
-## Including Plots
+```{r}
+#trainIndices1 = sample(1:dim(CaseStudy2Data)[1],round(.8 * dim(CaseStudy2Data)[1]))
+#save the highest accuracy sample
+#write.csv(trainIndices,file="TrainIndices.csv")
+trainIndices=read.csv("TrainIndices.csv")
+#train data
+train = CaseStudy2Data[trainIndices$x,]
+#test data
+test = CaseStudy2Data[-trainIndices$x,]
+#knn classification
+classifications = knn(train[,c(1,2,3,4)],test[,c(1,2,3,4)],train$Attrition, prob = TRUE, k = 11)
+table(classifications,test$Attrition)
+#get the confusion matrix
+confusionMatrix(table(classifications,test$Attrition))
+#New Threshold to maximise sensitivity/specificity
+probs = ifelse(classifications == "Yes",attributes(classifications)$prob, 1- attributes(classifications)$prob)
+NewClass = ifelse(probs >= .2, "Yes", "No")
+print(NewClass)
+table(NewClass,test[,5])
+CM = confusionMatrix(table(NewClass,test[,5]), mode = "everything")
+CM
+# Access various metrics from the confusion matrix
+accuracy <- CM$overall["Accuracy"]
+specificity <- CM$byClass["Specificity"]
+sensitivity <- CM$byClass["Sensitivity"]
 
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+# Print the metrics
+print(paste("Accuracy:", accuracy))
+print(paste("Specificity:", specificity))
+print(paste("Sensitivity:", sensitivity))
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r}
+
+#Read in CaseStudy2CompSet No Attrition.csv
+CaseStudy2CompSetNoAttrition = s3read_using(FUN = read.csv,
+                    bucket = "ddsproject1",
+                    object = "CaseStudy2CompSet No Attrition.csv")
+#using the train data, get the predictions with k=11
+trainIndices=read.csv("TrainIndices.csv")
+train = CaseStudy2Data[trainIndices$x,]
+classifications = knn(train[,c(1,2,3,4)],CaseStudy2CompSetNoAttrition[,c("Age","TotalWorkingYears","MonthlyIncome","YearsWithCurrManager")],train$Attrition, prob = TRUE, k = 11)
+#set the new threshold
+probs = ifelse(classifications == "Yes",attributes(classifications)$prob, 1- attributes(classifications)$prob)
+NewClass = ifelse(probs >= .2, "Yes", "No")
+CaseStudy2CompSetNoAttrition$Attrition = NewClass
+#write the predictions to the specific csv file
+write.csv(CaseStudy2CompSetNoAttrition[,c("ID","Attrition")],file="Case2PredictionsSimiAugustine Attrition.csv")
+
+```
+
+
+```{r}
+#Read in CaseStudy2CompSet No Salary.csv
+CaseStudy2CompSetNoSalary = s3read_using(FUN = read.csv,
+                    bucket = "ddsproject1",
+                    object = "CaseStudy2CompSet No Salary.csv")
+
+#Read in CaseStudy2CompSet No Salary.csv
+Case2PredictionsRegressEXAMPLE = s3read_using(FUN = read.csv,
+                    bucket = "ddsproject1",
+                    object = "Case2PredictionsRegressEXAMPLE.csv")
+
+#train_indices <- createDataPartition(CaseStudy2Data$MonthlyIncome, p = 0.8, list = FALSE)
+train_data <- CaseStudy2Data[trainIndices$x, ]
+valid_data <- CaseStudy2Data[-trainIndices$x, ]
+
+# Train a linear regression model
+model <- lm(MonthlyIncome ~ TotalWorkingYears + Age, data = train_data)
+
+# Make predictions on the validation set
+predictions <- predict(model, newdata = valid_data)
+
+# Calculate RMSE
+rmse <- sqrt(mean((valid_data$MonthlyIncome - predictions)^2))
+
+# Print RMSE
+cat("RMSE:", rmse, "\n")
+
+# Make predictions on the validation set
+predictionsNoSalary <- predict(model, newdata = CaseStudy2CompSetNoSalary)
+
+CaseStudy2CompSetNoSalary$MonthlyIncome = round(predictionsNoSalary)
+write.csv(CaseStudy2CompSetNoSalary[,c("ID","MonthlyIncome")],file="Case2PredictionsSimiAugustine Salary.csv")
+
+```
+
