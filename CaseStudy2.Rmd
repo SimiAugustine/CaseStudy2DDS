@@ -47,6 +47,31 @@ colSums(is.na(CaseStudy2))
 
 #create attrition count column
 CaseStudy2$Attrition_Count <- as.integer(ifelse(CaseStudy2$Attrition == "Yes", 1, 0))
+
+# Is there a relationship between department and MonthlyIncome? Does this relationship affect the employee’s willingness to leave their company?
+ggplot(data = CaseStudy2, aes(x= Department, color = Attrition))+
+  geom_point(position=position_jitterdodge(),alpha=.6,aes (y =  MonthlyIncome), bins = 30) +
+   labs(title = "Employee's MonthlyIncome To Company Distribution (Left the Comapny - Yes/No)",
+           x = "Department", y = "MonthlyIncome")+
+            theme(plot.title = element_text(size=9),
+                   axis.text.x = element_text(size=6) )
+
+SalesData = CaseStudy2 %>% filter(!Department=="Sales") 
+RDData = CaseStudy2 %>% filter(!Department=="Research & Development") 
+# Is there a relationship between JobRole and MonthlyIncome? Does this relationship affect the employee’s willingness to leave their company?
+ggplot(data = SalesData, aes(x= JobRole, color = Attrition))+
+  geom_point(position=position_jitterdodge(),alpha=.6,aes (y =  MonthlyIncome), bins = 30) +
+   labs(title = "Employee's MonthlyIncome To Job Role Distribution in Sales(Left the Comapny - Yes/No)",
+           x = "Job Role", y = "MonthlyIncome")+
+            theme(plot.title = element_text(size=9),
+                   axis.text.x = element_text(size=6) )
+ggplot(data = RDData, aes(x= JobRole, color = Attrition))+
+  geom_point(position=position_jitterdodge(),alpha=.6,aes (y =  MonthlyIncome), bins = 30) +
+   labs(title = "Employee's MonthlyIncome To Job Role Distribution in R & D(Left the Comapny - Yes/No)",
+           x = "Job Role", y = "MonthlyIncome")+
+            theme(plot.title = element_text(size=9),
+                   axis.text.x = element_text(size=6) )
+
 #Create a new column 'Age_Band'
 CaseStudy2$Age_Band <- ifelse(CaseStudy2$Age >= 55, 'Over 55',
                                   ifelse(CaseStudy2$Age >= 45, '45-54',
@@ -82,12 +107,13 @@ ggplot(agerange_counts, aes(x = "", y = Percent, fill = Age_Band)) +
         legend.title = element_text(size = 12),
         legend.text = element_text(size = 10))
 
-#Total Working years
-ggplot(data = CaseStudy2,aes(x=TotalWorkingYears, )) + geom_bar()
-ggplot(CaseStudy2, aes(y = TotalWorkingYears, x = Attrition_Count)) +
-  geom_point() +
-  labs(y = "Total Working Years", x = "Attrition", title = "Attrition vs Total Working Years") +
-  theme_minimal()
+#Plot working years
+ggplot(data = CaseStudy2, aes(x= TotalWorkingYears, color = Attrition))+
+  geom_point(position=position_jitterdodge(),alpha=.6,aes (y =  MonthlyIncome), bins = 30) +
+   labs(title = "Employee's MonthlyIncome To TotalWorkingYears Distribution(Left the Comapny - Yes/No)",
+           x = "Total Working Years", y = "MonthlyIncome")+
+            theme(plot.title = element_text(size=9),
+                   axis.text.x = element_text(size=6) )
 
 #get subset of attrition
 AttritionData <- CaseStudy2 %>% filter(Attrition_Count==1) %>% pull(MonthlyIncome)

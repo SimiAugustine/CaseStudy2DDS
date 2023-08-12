@@ -1,2 +1,3 @@
 # CaseStudy2DDS
 Attrition Data Analysis
+In conclusion, in order to reduce employee attrition rates, we need to tackle the top 3 factors: monthly income, age, and total working years. Some recommendations were made earlier, but ultimately we should adjust our strategy to create employee satisfaction. The sooner the employees settle and higher their salary, there is less chance of them leaving. Many companies spend lot of money and time, to recruit talents frequently. It is possible to reduce training and recruitment costs by solving the employee turnover problem. Therefore, my goal is to use different aspects to accurately solve the problem of employees leaving. 
