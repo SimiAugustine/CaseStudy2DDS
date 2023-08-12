@@ -12,6 +12,10 @@ author: "Simi Augustine"
 output: html_document
 ---
 
+#YouTube Link to my presentation
+https://youtu.be/WlbvZiOQsqk
+
+#R code for analysis
 # Loading Data From S3 Objects Using the aws.s3 package
 ```{r}
 
@@ -47,6 +51,31 @@ colSums(is.na(CaseStudy2))
 
 #create attrition count column
 CaseStudy2$Attrition_Count <- as.integer(ifelse(CaseStudy2$Attrition == "Yes", 1, 0))
+
+# Is there a relationship between department and MonthlyIncome? Does this relationship affect the employee’s willingness to leave their company?
+ggplot(data = CaseStudy2, aes(x= Department, color = Attrition))+
+  geom_point(position=position_jitterdodge(),alpha=.6,aes (y =  MonthlyIncome), bins = 30) +
+   labs(title = "Employee's MonthlyIncome To Company Distribution (Left the Comapny - Yes/No)",
+           x = "Department", y = "MonthlyIncome")+
+            theme(plot.title = element_text(size=9),
+                   axis.text.x = element_text(size=6) )
+
+SalesData = CaseStudy2 %>% filter(!Department=="Sales") 
+RDData = CaseStudy2 %>% filter(!Department=="Research & Development") 
+# Is there a relationship between JobRole and MonthlyIncome? Does this relationship affect the employee’s willingness to leave their company?
+ggplot(data = SalesData, aes(x= JobRole, color = Attrition))+
+  geom_point(position=position_jitterdodge(),alpha=.6,aes (y =  MonthlyIncome), bins = 30) +
+   labs(title = "Employee's MonthlyIncome To Job Role Distribution in Sales(Left the Comapny - Yes/No)",
+           x = "Job Role", y = "MonthlyIncome")+
+            theme(plot.title = element_text(size=9),
+                   axis.text.x = element_text(size=6) )
+ggplot(data = RDData, aes(x= JobRole, color = Attrition))+
+  geom_point(position=position_jitterdodge(),alpha=.6,aes (y =  MonthlyIncome), bins = 30) +
+   labs(title = "Employee's MonthlyIncome To Job Role Distribution in R & D(Left the Comapny - Yes/No)",
+           x = "Job Role", y = "MonthlyIncome")+
+            theme(plot.title = element_text(size=9),
+                   axis.text.x = element_text(size=6) )
+
 #Create a new column 'Age_Band'
 CaseStudy2$Age_Band <- ifelse(CaseStudy2$Age >= 55, 'Over 55',
                                   ifelse(CaseStudy2$Age >= 45, '45-54',
@@ -82,12 +111,13 @@ ggplot(agerange_counts, aes(x = "", y = Percent, fill = Age_Band)) +
         legend.title = element_text(size = 12),
         legend.text = element_text(size = 10))
 
-#Total Working years
-ggplot(data = CaseStudy2,aes(x=TotalWorkingYears, )) + geom_bar()
-ggplot(CaseStudy2, aes(y = TotalWorkingYears, x = Attrition_Count)) +
-  geom_point() +
-  labs(y = "Total Working Years", x = "Attrition", title = "Attrition vs Total Working Years") +
-  theme_minimal()
+#Plot working years
+ggplot(data = CaseStudy2, aes(x= TotalWorkingYears, color = Attrition))+
+  geom_point(position=position_jitterdodge(),alpha=.6,aes (y =  MonthlyIncome), bins = 30) +
+   labs(title = "Employee's MonthlyIncome To TotalWorkingYears Distribution(Left the Comapny - Yes/No)",
+           x = "Total Working Years", y = "MonthlyIncome")+
+            theme(plot.title = element_text(size=9),
+                   axis.text.x = element_text(size=6) )
 
 #get subset of attrition
 AttritionData <- CaseStudy2 %>% filter(Attrition_Count==1) %>% pull(MonthlyIncome)
@@ -168,59 +198,3 @@ print(paste("Accuracy:", accuracy))
 print(paste("Specificity:", specificity))
 print(paste("Sensitivity:", sensitivity))
 ```
-
-```{r}
-
-#Read in CaseStudy2CompSet No Attrition.csv
-CaseStudy2CompSetNoAttrition = s3read_using(FUN = read.csv,
-                    bucket = "ddsproject1",
-                    object = "CaseStudy2CompSet No Attrition.csv")
-#using the train data, get the predictions with k=11
-trainIndices=read.csv("TrainIndices.csv")
-train = CaseStudy2Data[trainIndices$x,]
-classifications = knn(train[,c(1,2,3,4)],CaseStudy2CompSetNoAttrition[,c("Age","TotalWorkingYears","MonthlyIncome","YearsWithCurrManager")],train$Attrition, prob = TRUE, k = 11)
-#set the new threshold
-probs = ifelse(classifications == "Yes",attributes(classifications)$prob, 1- attributes(classifications)$prob)
-NewClass = ifelse(probs >= .2, "Yes", "No")
-CaseStudy2CompSetNoAttrition$Attrition = NewClass
-#write the predictions to the specific csv file
-write.csv(CaseStudy2CompSetNoAttrition[,c("ID","Attrition")],file="Case2PredictionsSimiAugustine Attrition.csv")
-
-```
-
-
-```{r}
-#Read in CaseStudy2CompSet No Salary.csv
-CaseStudy2CompSetNoSalary = s3read_using(FUN = read.csv,
-                    bucket = "ddsproject1",
-                    object = "CaseStudy2CompSet No Salary.csv")
-
-#Read in CaseStudy2CompSet No Salary.csv
-Case2PredictionsRegressEXAMPLE = s3read_using(FUN = read.csv,
-                    bucket = "ddsproject1",
-                    object = "Case2PredictionsRegressEXAMPLE.csv")
-
-#train_indices <- createDataPartition(CaseStudy2Data$MonthlyIncome, p = 0.8, list = FALSE)
-train_data <- CaseStudy2Data[trainIndices$x, ]
-valid_data <- CaseStudy2Data[-trainIndices$x, ]
-
-# Train a linear regression model
-model <- lm(MonthlyIncome ~ TotalWorkingYears + Age, data = train_data)
-
-# Make predictions on the validation set
-predictions <- predict(model, newdata = valid_data)
-
-# Calculate RMSE
-rmse <- sqrt(mean((valid_data$MonthlyIncome - predictions)^2))
-
-# Print RMSE
-cat("RMSE:", rmse, "\n")
-
-# Make predictions on the validation set
-predictionsNoSalary <- predict(model, newdata = CaseStudy2CompSetNoSalary)
-
-CaseStudy2CompSetNoSalary$MonthlyIncome = round(predictionsNoSalary)
-write.csv(CaseStudy2CompSetNoSalary[,c("ID","MonthlyIncome")],file="Case2PredictionsSimiAugustine Salary.csv")
-
-```
-
